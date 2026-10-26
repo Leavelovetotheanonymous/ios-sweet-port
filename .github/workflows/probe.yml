@@ -1,0 +1,13 @@
+name: probe
+on: push
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "linux runner ok"; uname -a
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - run: echo "mac runner ok"; sw_vers
