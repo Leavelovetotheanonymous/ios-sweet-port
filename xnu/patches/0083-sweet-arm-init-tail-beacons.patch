@@ -1,0 +1,70 @@
+diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
+index 42362c5..9d3870b 100644
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -620,8 +620,19 @@ arm_init(
+ 	kptimer_curcpu_up();
+ #endif /* KPERF */
+ 
++	/*
++	 * SWEET: progress beacons for the tail of arm_init(). Everything from here
++	 * to machine_startup() is otherwise silent, so an early panic gives no clue
++	 * which step died. The digits accumulate on a single console line, so the
++	 * last one printed names the last call that returned.
++	 */
++	kprintf("SWEETM:");
++
+ 	PE_init_cpu();
++	kprintf("1");
++
+ 	fiq_context_init(TRUE);
++	kprintf("2");
+ 
+ 
+ #if HIBERNATION
+@@ -639,6 +650,7 @@ arm_init(
+ 	if (SecureDTLookupEntry(NULL, "/chosen", &chosen) != kSuccess) {
+ 		panic("%s: Unable to find 'chosen' DT node", __FUNCTION__);
+ 	}
++	kprintf("3");
+ 
+ 	if (SecureDTGetProperty(chosen, "dram-base", (void const **)&dram_base, &dt_entry_size) != kSuccess) {
+ 		panic("%s: Unable to find 'dram-base' entry in the 'chosen' DT node", __FUNCTION__);
+@@ -647,9 +659,11 @@ arm_init(
+ 	if (SecureDTGetProperty(chosen, "dram-size", (void const **)&dram_size, &dt_entry_size) != kSuccess) {
+ 		panic("%s: Unable to find 'dram-size' entry in the 'chosen' DT node", __FUNCTION__);
+ 	}
++	kprintf("4");
+ 
+ 	gDramBase = *dram_base;
+ 	gDramSize = *dram_size;
++	kprintf("5");
+ 
+ 	/*
+ 	 * Initialize the stack protector for all future calls
+@@ -659,6 +673,7 @@ arm_init(
+ 	 * we mutate the guard word during execution.
+ 	 */
+ 	__stack_chk_guard = (unsigned long)early_random();
++	kprintf("6");
+ 	/* Zero a byte of the protector to guard
+ 	 * against string vulnerabilities
+ 	 */
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+index 11b128b..3d29a1b 100644
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -626,6 +626,13 @@ sleh_synchronous(arm_context_t *context, uint32_t esr, vm_offset_t far)
+ 		    (void *)__builtin_arm_rsr64("ELR_EL1"),
+ 		    (unsigned int)__builtin_arm_rsr64("SPSR_EL1"),
+ 		    (void *)__builtin_arm_rsr64("FAR_EL1"));
++		/*
++		 * SWEET: if the vector base is not inside the kernel image the
++		 * saved frame cannot be trusted, which is exactly the kind of
++		 * bogus pc/instr pair we have been chasing.
++		 */
++		kprintf("SWEET SYNC2: vbar=%p\n",
++		    (void *)__builtin_arm_rsr64("VBAR_EL1"));
+ 	}
+ 
+ 	ASSERT_CONTEXT_SANITY(context);
