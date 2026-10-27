@@ -1,0 +1,118 @@
+diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
+index 9d3870b..979bbfa 100644
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -84,6 +84,17 @@
+ #include <kern/monotonic.h>
+ #endif /* MONOTONIC */
+ 
++/*
++ * SWEET bring-up probe state. The console's top rows come out unreadable in
++ * photos of the handset, so nothing here prints: these values are captured
++ * silently and dumped by the exception handler at the bottom of the screen,
++ * which is the part of the log that survives a re-shot.
++ */
++volatile unsigned int sweet_step;   /* last tail-of-arm_init step that returned */
++volatile unsigned int sweet_w1;     /* text canaries, read back after GIC init */
++volatile unsigned int sweet_w2;
++volatile unsigned int sweet_w3;
++
+ #if KPERF
+ #include <kperf/kptimer.h>
+ #endif /* KPERF */
+@@ -626,13 +637,21 @@ arm_init(
+ 	 * which step died. The digits accumulate on a single console line, so the
+ 	 * last one printed names the last call that returned.
+ 	 */
+-	kprintf("SWEETM:");
+-
+ 	PE_init_cpu();
+-	kprintf("1");
++
++	/*
++	 * SWEET: GIC is up. Read a few words straight out of __TEXT_EXEC so the
++	 * exception handler can tell us whether the kernel image in memory still
++	 * matches the file we shipped; 0x7a75140 is the address a previous build
++	 * faulted on.
++	 */
++	sweet_step = 1;
++	sweet_w1 = *(volatile uint32_t *)(uintptr_t)0xfffffe0007a75140UL;
++	sweet_w2 = *(volatile uint32_t *)(uintptr_t)0xfffffe0007a00000UL;
++	sweet_w3 = *(volatile uint32_t *)(uintptr_t)0xfffffe0007b00000UL;
+ 
+ 	fiq_context_init(TRUE);
+-	kprintf("2");
++	sweet_step = 2;
+ 
+ 
+ #if HIBERNATION
+@@ -650,7 +669,7 @@ arm_init(
+ 	if (SecureDTLookupEntry(NULL, "/chosen", &chosen) != kSuccess) {
+ 		panic("%s: Unable to find 'chosen' DT node", __FUNCTION__);
+ 	}
+-	kprintf("3");
++	sweet_step = 3;
+ 
+ 	if (SecureDTGetProperty(chosen, "dram-base", (void const **)&dram_base, &dt_entry_size) != kSuccess) {
+ 		panic("%s: Unable to find 'dram-base' entry in the 'chosen' DT node", __FUNCTION__);
+@@ -659,11 +678,11 @@ arm_init(
+ 	if (SecureDTGetProperty(chosen, "dram-size", (void const **)&dram_size, &dt_entry_size) != kSuccess) {
+ 		panic("%s: Unable to find 'dram-size' entry in the 'chosen' DT node", __FUNCTION__);
+ 	}
+-	kprintf("4");
++	sweet_step = 4;
+ 
+ 	gDramBase = *dram_base;
+ 	gDramSize = *dram_size;
+-	kprintf("5");
++	sweet_step = 5;
+ 
+ 	/*
+ 	 * Initialize the stack protector for all future calls
+@@ -673,7 +692,7 @@ arm_init(
+ 	 * we mutate the guard word during execution.
+ 	 */
+ 	__stack_chk_guard = (unsigned long)early_random();
+-	kprintf("6");
++	sweet_step = 6;
+ 	/* Zero a byte of the protector to guard
+ 	 * against string vulnerabilities
+ 	 */
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+index 3d29a1b..948ece8 100644
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -598,6 +598,12 @@ is_platform_error(uint32_t esr)
+ 	return fault_code == FSC_SYNC_PARITY;
+ }
+ 
++/* SWEET: captured silently by arm_init(), dumped here at the bottom of the log. */
++extern volatile unsigned int sweet_step;
++extern volatile unsigned int sweet_w1;
++extern volatile unsigned int sweet_w2;
++extern volatile unsigned int sweet_w3;
++
+ void
+ sleh_synchronous(arm_context_t *context, uint32_t esr, vm_offset_t far)
+ {
+@@ -633,6 +639,20 @@ sleh_synchronous(arm_context_t *context, uint32_t esr, vm_offset_t far)
+ 		 */
+ 		kprintf("SWEET SYNC2: vbar=%p\n",
+ 		    (void *)__builtin_arm_rsr64("VBAR_EL1"));
++		/*
++		 * SWEET: short, spaced fields. Long dense hex runs turn into white
++		 * blobs in photographs of the panel; these lines survive.
++		 */
++		uint64_t sweet_pc = (uint64_t)get_saved_state_pc(state);
++		kprintf("SWEETP %x %x %x %x\n",
++		    (unsigned int)((sweet_pc >> 48) & 0xffff),
++		    (unsigned int)((sweet_pc >> 32) & 0xffff),
++		    (unsigned int)((sweet_pc >> 16) & 0xffff),
++		    (unsigned int)(sweet_pc & 0xffff));
++		kprintf("SWEET S %u\n", sweet_step);
++		kprintf("SWEET W1 %x\n", sweet_w1);
++		kprintf("SWEET W2 %x\n", sweet_w2);
++		kprintf("SWEET W3 %x\n", sweet_w3);
+ 	}
+ 
+ 	ASSERT_CONTEXT_SANITY(context);
