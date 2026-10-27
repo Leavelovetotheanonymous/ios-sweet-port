@@ -47,6 +47,7 @@ env:
   BUILDID: ${{ inputs.build || '20H392' }}
   IMG_SIZE: ${{ inputs.size || '16G' }}
   PART_MB: ${{ inputs.part_mb || '1900' }}
+  WORK: ${{ github.workspace }}/work
   TAG: rootfs-${{ inputs.device || 'iPhone10,3' }}-${{ inputs.version || '16.7.16' }}
 
 jobs:
@@ -108,10 +109,14 @@ jobs:
 
       - name: Fetch IPSW
         run: |
-          curl -fsSL "https://api.ipsw.me/v4/device/$DEVICE?type=ipsw" -o /tmp/ipsw.json
-          python3 - <<'PY' > /tmp/ipsw.url
+          # /tmp on these runners is a small tmpfs: a 5.7 GB IPSW plus 7 GB of
+          # dmg did not fit there (run 40505537120 died with ENOSPC). Keep
+          # everything on the workspace disk instead.
+          mkdir -p "$WORK"
+          curl -fsSL "https://api.ipsw.me/v4/device/$DEVICE?type=ipsw" -o "$WORK/ipsw.json"
+          python3 - > "$WORK/ipsw.url" <<'PY'
           import json, os, sys
-          d = json.load(open("/tmp/ipsw.json"))
+          d = json.load(open(os.path.join(os.environ["WORK"], "ipsw.json")))
           ver, build = os.environ["VERSION"], os.environ["BUILDID"]
           hit = [f for f in d["firmwares"] if f["version"] == ver and f["buildid"] == build]
           if not hit:
@@ -120,9 +125,10 @@ jobs:
               sys.exit(1)
           print(hit[0]["url"])
           PY
-          cat /tmp/ipsw.url
-          curl -fL --retry 4 --retry-delay 5 -o /tmp/fw.ipsw "$(cat /tmp/ipsw.url)"
-          ls -l /tmp/fw.ipsw
+          cat "$WORK/ipsw.url"
+          curl -fL --retry 4 --retry-delay 5 -o "$WORK/fw.ipsw" "$(cat "$WORK/ipsw.url")"
+          ls -l "$WORK/fw.ipsw"
+          df -h "$WORK"
 
       - name: Extract the three images
         # BuildManifest says which numbered dmg is which; do it by key, not by
@@ -130,39 +136,38 @@ jobs:
         run: |
           python3 - <<'PY'
           import plistlib, os, zipfile, json, subprocess
-          z = zipfile.ZipFile("/tmp/fw.ipsw")
-          bm = plistlib.loads(z.read("BuildManifest.plist"))
-          bi = bm["BuildIdentities"][0]["Manifest"]
-          want = {"OS": "/tmp/OS.dmg",
-                  "Cryptex1,SystemOS": "/tmp/SYSTEMOS.dmg",
-                  "Cryptex1,AppOS": "/tmp/APPOS.dmg"}
-          plan = {}
-          for key, dst in want.items():
+          work = os.environ["WORK"]
+          ipsw = os.path.join(work, "fw.ipsw")
+          z = zipfile.ZipFile(ipsw)
+          bi = plistlib.loads(z.read("BuildManifest.plist"))["BuildIdentities"][0]["Manifest"]
+          want = {"OS": "OS.dmg",
+                  "Cryptex1,SystemOS": "SYSTEMOS.dmg",
+                  "Cryptex1,AppOS": "APPOS.dmg"}
+          xdir = os.path.join(work, "x")
+          for key, name in want.items():
               src = bi[key]["Info"]["Path"]
-              plan[src] = dst
-          print(json.dumps(plan, indent=1))
-          for src, dst in plan.items():
-              subprocess.check_call(["unzip", "-o", "-q", "/tmp/fw.ipsw", src, "-d", "/tmp/x"])
-              os.replace(os.path.join("/tmp/x", src), dst)
+              print(key, "->", src, "=>", name, flush=True)
+              subprocess.check_call(["unzip", "-o", "-q", ipsw, src, "-d", xdir])
+              os.replace(os.path.join(xdir, src), os.path.join(work, name))
           PY
-          rm -f /tmp/fw.ipsw
-          ls -l /tmp/*.dmg
-          df -h /
+          rm -rf "$WORK/fw.ipsw" "$WORK/x"
+          ls -l "$WORK"/*.dmg
+          df -h "$WORK"
 
       - name: Build the root image
         run: |
-          sudo -E bash tools/mkiosroot.sh /tmp/OS.dmg /tmp/SYSTEMOS.dmg /tmp/APPOS.dmg \
-               /tmp/ios16-root.img "$IMG_SIZE"
-          ls -l /tmp/ios16-root.img
-          du -h --apparent-size /tmp/ios16-root.img
-          du -h /tmp/ios16-root.img
+          sudo -E bash tools/mkiosroot.sh "$WORK"/OS.dmg "$WORK"/SYSTEMOS.dmg "$WORK"/APPOS.dmg \
+               "$WORK"/ios16-root.img "$IMG_SIZE"
+          ls -l "$WORK"/ios16-root.img
+          du -h --apparent-size "$WORK"/ios16-root.img
+          du -h "$WORK"/ios16-root.img
 
       - name: Verify the image
         run: |
-          fsck.hfsplus -f -n /tmp/ios16-root.img
+          fsck.hfsplus -f -n "$WORK"/ios16-root.img
           # Spot-check the two things SWEET added on purpose.
           sudo mkdir -p /mnt/chk
-          sudo mount -t hfsplus -o loop,ro,force /tmp/ios16-root.img /mnt/chk
+          sudo mount -t hfsplus -o loop,ro,force "$WORK"/ios16-root.img /mnt/chk
           ls /mnt/chk/System/Library/Caches/com.apple.dyld | head -3
           ls -l /mnt/chk/private/var/keybags/systembag.kb
           test -d /mnt/chk/private/preboot/Cryptexes/OS/System
@@ -170,10 +175,10 @@ jobs:
 
       - name: Compress and split
         run: |
-          mkdir -p /tmp/out
-          zstd -T0 -19 --long=27 -o /tmp/out/ios16-root.img.zst /tmp/ios16-root.img
-          rm -f /tmp/ios16-root.img
-          cd /tmp/out
+          mkdir -p "$WORK"/out
+          zstd -T0 -19 --long=27 -o "$WORK"/out/ios16-root.img.zst "$WORK"/ios16-root.img
+          rm -f "$WORK"/ios16-root.img
+          cd "$WORK"/out
           split -b "${PART_MB}M" -d -a 2 ios16-root.img.zst ios16-root.img.zst.part-
           rm -f ios16-root.img.zst
           sha256sum ios16-root.img.zst.part-* > SHA256SUMS
@@ -182,7 +187,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ios16-root-zst-parts
-          path: /tmp/out/*
+          # upload-artifact does not run a shell: this must be a literal path.
+          path: ${{ github.workspace }}/work/out/*
           if-no-files-found: error
 
       - name: Publish as release assets
@@ -194,6 +200,6 @@ jobs:
             gh release create "$TAG" -R "$GITHUB_REPOSITORY" \
               --title "iOS $VERSION ($BUILDID) root filesystem" \
               --notes "Built by .github/workflows/rootfs.yml from Apple's IPSW with tools/mkiosroot.sh."
-          gh release upload "$TAG" /tmp/out/* -R "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$TAG" "$WORK"/out/* -R "$GITHUB_REPOSITORY" --clobber
           gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets \
             --jq '.assets[] | "\(.name)\t\(.size)"'
