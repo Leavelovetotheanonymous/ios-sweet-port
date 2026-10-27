@@ -1,0 +1,25 @@
+diff --git a/osfmk/arm64/machine_routines.c b/osfmk/arm64/machine_routines.c
+--- a/osfmk/arm64/machine_routines.c
++++ b/osfmk/arm64/machine_routines.c
+@@ -2244,9 +2244,19 @@
+ {
+ 	uint64_t cntvctl = CNTV_CTL_EL0_ENABLE; /* One wants to use 32 bits, but "mrs" prefers it this way */
+ 
++	/*
++	 * SWEET: the write to CNTP_CTL_EL0 below raises an Undefined
++	 * Instruction on this SoC (run 40497169632 printed "SWEETV p0" and
++	 * then faulted on exactly that MSR, at EL1). Masking the physical
++	 * timer is only a precaution, so on this platform we skip it and
++	 * just enable the virtual timer, which is the one xnu actually uses.
++	 */
++	kprintf("SWEETV cel=%u\n",
++	    (unsigned int)(__builtin_arm_rsr64("CurrentEL") >> 2));
++
++	kprintf("SWEETV p1\n");
+ 	__builtin_arm_wsr64("CNTV_CTL_EL0", cntvctl);
+-	/* disable the physical timer as a precaution, as its registers reset to architecturally unknown values */
+-	__builtin_arm_wsr64("CNTP_CTL_EL0", CNTP_CTL_EL0_IMASKED);
++	kprintf("SWEETV p2\n");
+ }
+ 
+ void
