@@ -1,0 +1,66 @@
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -206,10 +206,53 @@
+ 	return true;
+ }
+ 
++/*
++ * Heartbeat probe.
++ *
++ * Every observation channel we have goes through the console: kprintf takes
++ * the console lock and draws into the panel. If anything wedges that lock
++ * (or the thread that holds it), the screen freezes and looks exactly like a
++ * dead machine -- no panic, no reset, nothing. This draws straight into panel
++ * memory with no lock and no kprintf, so it keeps moving as long as the
++ * kernel is still scheduling.
++ *
++ *   top edge, red   -- incremented by the vsync timer (proof the work loop runs)
++ *   bottom edge, green -- incremented by swap() from userland (proof iOS is
++ *                      submitting frames, i.e. a display server is alive)
++ *
++ * The block sweeps left to right and wraps; a still block means that source
++ * stopped.
++ */
++static uint32_t sweet_hb_ticks[2];
++
++static void
++sweet_fb_heartbeat(uintptr_t pixels, uint32_t rowBytes, uint32_t w, uint32_t h, int which)
++{
++	if (pixels == 0 || w < 128 || h < 128) {
++		return;
++	}
++	uint32_t n = ++sweet_hb_ticks[which];
++	uint32_t span = w - 32;
++	uint32_t off = (which == 0) ? (n * 8) % span : (n * 32) % span;
++	uint32_t color = (which == 0) ? 0xffff0000u : 0xff00ff00u;
++	uint32_t y0 = (which == 0) ? 0u : (h - 32);
++
++	for (uint32_t y = y0; y < y0 + 32; y += 2) {
++		volatile uint32_t *line = (volatile uint32_t *)(pixels + (uint64_t)y * rowBytes);
++		for (uint32_t x = 0; x < w; x += 2) {
++			line[x] = (x >= off && x < off + 32) ? color : 0xff000000u;
++		}
++	}
++}
++
+ void
+ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ {
+ 	AppleCLCD *fb = (AppleCLCD *)owner;
++
++	/* Before any lock: this must survive a wedged driver. */
++	sweet_fb_heartbeat(fb->fPixels, fb->fRowBytes, fb->fWidth, fb->fHeight, 0);
++
+ 	uint64_t now = mach_absolute_time();
+ 	uint64_t count = ++fb->fVsyncCount;
+ 	uint64_t values[6] = {
+@@ -299,6 +342,9 @@
+ void
+ AppleCLCD::swap(const uint8_t *rec)
+ {
++	/* Green heartbeat: proves a userland display server is submitting frames. */
++	sweet_fb_heartbeat(fPixels, fRowBytes, fWidth, fHeight, 1);
++
+ 	IOLockLock(fLock);
+ 	memcpy(fPending, rec, SWEET_FB_SWAP_REC_SIZE);
+ 	fDirty = true;
