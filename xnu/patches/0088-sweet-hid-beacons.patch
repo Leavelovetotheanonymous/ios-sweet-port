@@ -16,10 +16,22 @@
  /* One open client: the user client and its event callback. */
  class IOHIDEventServiceClient : public OSObject {
  	OSDeclareDefaultStructors(IOHIDEventServiceClient);
-@@ -371,17 +380,21 @@
+@@ -371,17 +380,33 @@
  bool
  SweetHIDButtons::start(IOService *provider)
  {
++	/*
++	 * sweethid=0: do not publish anything and let the start queue move on.
++	 * The HID services are only needed by backboardd, long after the root
++	 * device is mounted, so dropping them is a safe way past a wedge here.
++	 * No beacon either: an empty beacon column is how a photo shows that the
++	 * driver was skipped on purpose rather than hung on entry.
++	 */
++	uint32_t hidOn = 1;
++	if (PE_parse_boot_argn("sweethid", &hidOn, sizeof(hidOn)) && hidOn == 0) {
++		return true;
++	}
++
 +	sweet_beacon(0);
  	if (!IOHIDEventService::start(provider)) {
  		return false;
@@ -38,10 +50,15 @@
  	IOLog("SWEET HID: buttons registered (test every %u s)\n", fTestSecs);
  	return true;
  }
-@@ -418,16 +431,19 @@
+@@ -418,16 +443,24 @@
  bool
  SweetHIDTouch::start(IOService *provider)
  {
++	uint32_t hidOn = 1;
++	if (PE_parse_boot_argn("sweethid", &hidOn, sizeof(hidOn)) && hidOn == 0) {
++		return true;
++	}
++
 +	sweet_beacon(4);
  	fLock = IOLockAlloc();
  	if (!fLock || !IOHIDEventService::start(provider)) {
