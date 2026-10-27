@@ -1,0 +1,60 @@
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -31,6 +31,15 @@
+ 
+ extern "C" uint64_t mach_absolute_time(void);
+ 
++/*
++ * Milestone beacon (SweetFramebuffer.cpp): lights one cell per step on the
++ * right edge of the panel, drawn by the vsync timer with no lock and no
++ * kprintf. It is the only progress channel that survives a wedged console,
++ * which is exactly what the boot hangs look like: the last IOLog of a start
++ * routine never appears even though the routine itself must have finished.
++ */
++extern "C" void sweet_beacon(uint32_t step);
++
+ /* One open client: the user client and its event callback. */
+ class IOHIDEventServiceClient : public OSObject {
+ 	OSDeclareDefaultStructors(IOHIDEventServiceClient);
+@@ -371,17 +380,21 @@
+ bool
+ SweetHIDButtons::start(IOService *provider)
+ {
++	sweet_beacon(0);
+ 	if (!IOHIDEventService::start(provider)) {
+ 		return false;
+ 	}
++	sweet_beacon(1);
+ 	if (PE_parse_boot_argn("sweethidtest", &fTestSecs, sizeof(fTestSecs)) && fTestSecs) {
+ 		fTest = IOTimerEventSource::timerEventSource(this, &SweetHIDButtons::testFired);
+ 		if (fTest && _hidWorkLoop->addEventSource(fTest) == kIOReturnSuccess) {
+ 			fTest->setTimeoutMS(fTestSecs * 1000);
+ 		}
+ 	}
++	sweet_beacon(2);
+ 	gSweetButtons = this;
+ 	registerService();
++	sweet_beacon(3);
+ 	IOLog("SWEET HID: buttons registered (test every %u s)\n", fTestSecs);
+ 	return true;
+ }
+@@ -418,16 +431,19 @@
+ bool
+ SweetHIDTouch::start(IOService *provider)
+ {
++	sweet_beacon(4);
+ 	fLock = IOLockAlloc();
+ 	if (!fLock || !IOHIDEventService::start(provider)) {
+ 		return false;
+ 	}
++	sweet_beacon(5);
+ 	/* The digitizer covers the main display (backboardd maps it 1:1). */
+ 	setProperty("DisplayIntegrated", kOSBooleanTrue);
+ 	setProperty("SurfaceWidth", (unsigned long long)(68 << 16), 32);	/* mm, 16.16 */
+ 	setProperty("SurfaceHeight", (unsigned long long)(151 << 16), 32);
+ 	gSweetTouch = this;
+ 	registerService();
++	sweet_beacon(6);
+ 	IOLog("SWEET HID: touch registered\n");
+ 	return true;
+ }

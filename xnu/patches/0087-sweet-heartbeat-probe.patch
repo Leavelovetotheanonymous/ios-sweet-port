@@ -1,6 +1,6 @@
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
-@@ -206,10 +206,53 @@
+@@ -206,10 +206,95 @@
  	return true;
  }
  
@@ -22,6 +22,45 @@
 + * stopped.
 + */
 +static uint32_t sweet_hb_ticks[2];
++static uint32_t sweet_hb_beacon;        /* milestones lit, 0 = none */
++
++#define SWEET_BEACON_CELLS      32
++#define SWEET_BEACON_CELL       40
++#define SWEET_BEACON_PITCH      52
++
++/*
++ * Milestone beacon: drivers call this with a step number as they get through
++ * their start(), and the vsync timer repaints the lit cells every frame. Text
++ * is drawn by the console and would rub the cells out, so they have to be
++ * repainted; that also means the column only moves while the work loop runs.
++ */
++extern "C" void
++sweet_beacon(uint32_t step)
++{
++	if (step < SWEET_BEACON_CELLS && (step + 1) > sweet_hb_beacon) {
++		sweet_hb_beacon = step + 1;
++	}
++}
++
++static void
++sweet_fb_paint_beacons(volatile uint32_t *px, uint32_t strideWords, uint32_t w, uint32_t h)
++{
++	uint32_t cells = sweet_hb_beacon;
++	uint32_t x = (w > 160) ? (w - 120) : (w > 60 ? w - 50 : 0);
++
++	for (uint32_t i = 0; i < cells; i++) {
++		uint32_t y = 240 + i * SWEET_BEACON_PITCH;
++		if (y + SWEET_BEACON_CELL > h - 80) {
++			break;
++		}
++		for (uint32_t yy = y; yy < y + SWEET_BEACON_CELL; yy += 2) {
++			volatile uint32_t *line = px + (uint64_t)yy * strideWords;
++			for (uint32_t xx = x; xx < x + SWEET_BEACON_CELL; xx += 2) {
++				line[xx] = 0xffffffffu;
++			}
++		}
++	}
++}
 +
 +static void
 +sweet_fb_heartbeat(uintptr_t pixels, uint32_t rowBytes, uint32_t w, uint32_t h, int which)
@@ -41,6 +80,9 @@
 +			line[x] = (x >= off && x < off + 32) ? color : 0xff000000u;
 +		}
 +	}
++	if (which == 0) {
++		sweet_fb_paint_beacons((volatile uint32_t *)pixels, rowBytes / 4, w, h);
++	}
 +}
 +
  void
@@ -54,7 +96,7 @@
  	uint64_t now = mach_absolute_time();
  	uint64_t count = ++fb->fVsyncCount;
  	uint64_t values[6] = {
-@@ -299,6 +342,9 @@
+@@ -299,6 +384,9 @@
  void
  AppleCLCD::swap(const uint8_t *rec)
  {
