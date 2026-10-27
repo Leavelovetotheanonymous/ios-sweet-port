@@ -99,7 +99,9 @@ jobs:
           cmake -S /tmp/apfs-fuse -B /tmp/apfs-fuse/build \
                 -DUSE_FUSE3=ON -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_INSTALL_PREFIX=/usr/local \
-                -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+                -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+                -DCMAKE_CXX_FLAGS="-include cstdint -include cstring -include cstdio -include cstdlib" \
+                -DCMAKE_C_FLAGS="-include stdint.h -include stdio.h -include string.h -include stdlib.h"
           sudo cmake --build /tmp/apfs-fuse/build -j"$(nproc)" --target install
           command -v apfs-fuse
           apfs-fuse 2>&1 | head -5 || true
