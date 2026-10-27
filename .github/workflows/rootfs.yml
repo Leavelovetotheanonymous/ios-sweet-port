@@ -169,12 +169,15 @@ jobs:
           # the image is readable, which is the only thing that matters.
           fsck.hfsplus -f -n "$WORK"/ios16-root.img ||
             echo "::warning::fsck still reports a header nit; relying on the mount check"
-          # Spot-check the two things SWEET added on purpose.
+          # Spot-check the two things SWEET added on purpose. The keybag is
+          # mode 0600 inside a 0700 directory, so stat it as root.
           sudo mkdir -p /mnt/chk
           sudo mount -t hfsplus -o loop,ro,force "$WORK"/ios16-root.img /mnt/chk
           ls /mnt/chk/System/Library/Caches/com.apple.dyld | head -3
-          ls -l /mnt/chk/private/var/keybags/systembag.kb
-          test -d /mnt/chk/private/preboot/Cryptexes/OS/System
+          sudo ls -l /mnt/chk/private/var/keybags/systembag.kb
+          sudo test -d /mnt/chk/private/preboot/Cryptexes/OS/System
+          sudo test -f /mnt/chk/System/Library/Coreservices/SystemVersion.plist ||
+            sudo test -f /mnt/chk/System/Library/CoreServices/SystemVersion.plist
           sudo umount /mnt/chk
 
       - name: Compress and split
