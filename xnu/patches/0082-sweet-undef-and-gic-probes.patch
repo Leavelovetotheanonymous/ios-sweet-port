@@ -1,0 +1,91 @@
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+index 24f1abc..11b128b 100644
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -613,6 +613,21 @@ sleh_synchronous(arm_context_t *context, uint32_t esr, vm_offset_t far)
+ 	uintptr_t saved_expected_fault_addr = 0;
+ #endif /* CONFIG_XNUPOST */
+ 
++	/*
++	 * SWEET bring-up probe: print the real system registers next to the saved
++	 * state. If ELR/FAR disagree with pc/far the state is stale or garbage,
++	 * which is the whole question we are trying to answer here.
++	 */
++	if (!PSR64_IS_USER(get_saved_state_cpsr(state))) {
++		kprintf("SWEET SYNC: esr=%x class=%u far=%p pc=%p cpsr=%x | ELR=%p SPSR=%x FAR=%p\n",
++		    esr, (unsigned int)class, (void *)far,
++		    (void *)get_saved_state_pc(state),
++		    (unsigned int)get_saved_state_cpsr(state),
++		    (void *)__builtin_arm_rsr64("ELR_EL1"),
++		    (unsigned int)__builtin_arm_rsr64("SPSR_EL1"),
++		    (void *)__builtin_arm_rsr64("FAR_EL1"));
++	}
++
+ 	ASSERT_CONTEXT_SANITY(context);
+ 
+ 	task_vtimer_check(thread);
+@@ -948,6 +963,12 @@ handle_uncategorized(arm_saved_state_t *state)
+ 			(void) ml_set_interrupts_enabled(interrupt_state);
+ 			return;
+ 		} else {
++			kprintf("SWEET UNDEF: pc=%p instr=%x cpsr=%x | ELR=%p SPSR=%x FAR=%p\n",
++			    (void *)get_saved_state_pc(state), instr,
++			    (unsigned int)get_saved_state_cpsr(state),
++			    (void *)__builtin_arm_rsr64("ELR_EL1"),
++			    (unsigned int)__builtin_arm_rsr64("SPSR_EL1"),
++			    (void *)__builtin_arm_rsr64("FAR_EL1"));
+ 			panic("Undefined kernel instruction: pc=%p instr=%x", (void*)get_saved_state_pc(state), instr);
+ 		}
+ 	}
+diff --git a/pexpert/arm/pe_fiq.c b/pexpert/arm/pe_fiq.c
+index 6089db9..cc436b6 100644
+--- a/pexpert/arm/pe_fiq.c
++++ b/pexpert/arm/pe_fiq.c
+@@ -133,6 +133,10 @@ pe_init_fiq()
+ 			panic("%s: cannot map GICD region", __func__);
+ 		}
+ 
++		kprintf("SWEET GIC: mapped GICD phys=%p virt=%p size=%p\n",
++		    (void *)(soc_base_phys + gicd_base_prop), (void *)gicd_base,
++		    (void *)(uintptr_t)gicd_size_prop);
++
+ 		// Find GICR base address
+ 		gicr_base = ml_io_map(soc_base_phys + gicr_base_prop, gicr_size_prop);
+ 
+@@ -141,11 +145,18 @@ pe_init_fiq()
+ 		}
+ 
+ 		gicr_size = gicr_size_prop;
++
++		kprintf("SWEET GIC: mapped GICR phys=%p virt=%p size=%p\n",
++		    (void *)(soc_base_phys + gicr_base_prop), (void *)gicr_base,
++		    (void *)(uintptr_t)gicr_size_prop);
+ 	}
+ 
+ 	// Find the redistributor for this processor
+ 	vm_offset_t gicr_pe_base = find_gicr_pe_base();
+ 
++	kprintf("SWEET GIC: redistributor for cpu %u at %p\n",
++	    ml_get_cpu_number_local(), (void *)gicr_pe_base);
++
+ 	// Mark this PE to be awake
+ 	uint32_t gicr_waker = gicr_read32(GICR_WAKER);
+ 	if (gicr_waker & GICR_WAKER_CHILDRENASLEEP) {
+@@ -164,6 +175,8 @@ pe_init_fiq()
+ 		}
+ 	}
+ 
++	kprintf("SWEET GIC: cpu %u redistributor awake\n", ml_get_cpu_number_local());
++
+ #if defined(SWEET)
+ 	/*
+ 	 * Real hardware with two security states: Group 0 is TrustZone's and
+@@ -221,6 +234,8 @@ pe_init_fiq()
+ 	__builtin_arm_wsr64("ICC_IGRPEN0_EL1", 1);
+ 	__builtin_arm_isb(ISB_SY);
+ #endif /* SWEET */
++
++	kprintf("SWEET GIC: done on cpu %u\n", ml_get_cpu_number_local());
+ }
+ #else
+ void
