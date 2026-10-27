@@ -72,7 +72,24 @@ jobs:
         env:
           # keep going after errors so one run reports every compile failure
           MAKEFLAGS: ${{ inputs.keep_going == 'false' && '' || '-k' }}
-        run: bash build.sh
+        # pipefail + tee: keep the log so a skipped patch can be detected below
+        run: |
+          set -o pipefail
+          bash build.sh 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+      - name: Every SWEET patch must have applied
+        # blacktop's build.sh applies patches with `git apply` and only *warns*
+        # when one does not fit. The build then succeeds with a stale kernel and
+        # nothing on the phone changes -- that is exactly how 0086 was lost on
+        # run 40499163645 (its context assumed the upstream write order, but
+        # 0085 had already swapped the two writes).
+        if: always()
+        run: |
+          if grep -E "Skipping patch .*patches/([0-9]{4}-sweet-|TrustCache)" build.log; then
+            echo "::error::a SWEET patch was skipped -- the kernel below is stale"
+            exit 1
+          fi
+          echo "no SWEET patch was skipped"
 
       - name: Package build tree for local compiles
         if: always()
