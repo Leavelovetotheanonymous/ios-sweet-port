@@ -90,9 +90,16 @@ jobs:
 
       - name: Build apfs-fuse
         run: |
-          git clone --depth 1 https://github.com/sgan81/apfs-fuse.git /tmp/apfs-fuse
+          # 3rdparty/lzfse is a submodule (LZBITMAP/LZFSE decompression), so a
+          # plain shallow clone is not enough.
+          git clone --depth 1 --recurse-submodules --shallow-submodules \
+            https://github.com/sgan81/apfs-fuse.git /tmp/apfs-fuse
+          # The project still says cmake_minimum_required(VERSION 3.0), which
+          # CMake 4 refuses outright; 3.5 is the oldest policy it accepts.
           cmake -S /tmp/apfs-fuse -B /tmp/apfs-fuse/build \
-                -DUSE_FUSE3=ON -DCMAKE_BUILD_TYPE=Release
+                -DUSE_FUSE3=ON -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX=/usr/local \
+                -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           sudo cmake --build /tmp/apfs-fuse/build -j"$(nproc)" --target install
           command -v apfs-fuse
           apfs-fuse 2>&1 | head -5 || true
