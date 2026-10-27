@@ -82,7 +82,7 @@ jobs:
             sudo dpkg -i "$deb"
           fi
           export PATH="$PATH:/sbin:/usr/sbin"
-          for t in apfs-fuse mkfs.hfsplus fsck.hfsplus rsync; do
+          for t in mkfs.hfsplus fsck.hfsplus rsync; do
             command -v "$t" || { echo "missing $t" >&2; exit 1; }
           done
           sudo modprobe hfsplus && echo "hfsplus module loaded" || \
@@ -94,7 +94,7 @@ jobs:
           cmake -S /tmp/apfs-fuse -B /tmp/apfs-fuse/build \
                 -DUSE_FUSE3=ON -DCMAKE_BUILD_TYPE=Release
           sudo cmake --build /tmp/apfs-fuse/build -j"$(nproc)" --target install
-          # lsb_release is 22.04+; make sure the binary really runs.
+          command -v apfs-fuse
           apfs-fuse 2>&1 | head -5 || true
 
       - name: Fetch IPSW
