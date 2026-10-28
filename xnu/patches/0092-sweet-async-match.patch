@@ -1,0 +1,39 @@
+--- a/iokit/Kernel/IOService.cpp
++++ b/iokit/Kernel/IOService.cpp
+@@ -1070,8 +1070,9 @@ void
+ IOService::startMatching( IOOptionBits options )
+ {
+ 	IOService * provider;
+ 	UInt32      prevBusy = 0;
++	uint32_t    sweetAsyncMatch = 0;        /* SWEET 0092: see below */
+ 	bool        needConfig;
+ 	bool        needWake = false;
+ 	bool        sync;
+ 	bool        waitAgain;
+@@ -1094,8 +1095,26 @@ IOService::startMatching( IOOptionBits options )
+ 	if (options & kIOServiceAsynchronous) {
+ 		sync = false;
+ 	}
+ 
++	/*
++	 * SWEET 0092 experiment: never block the caller inside startMatching().
++	 *
++	 * The 13:06 boot on star stopped with the last console line being
++	 * "config(21): creating", printed by _IOServiceJob::pingConfig() a few
++	 * instructions before it creates a config thread. Everything after that --
++	 * including the IOLog at the end of SweetHIDButtons::start -- never ran,
++	 * and the only blocking point on this path is the thread_block() below,
++	 * which waits for the matching jobs' busy state to fall. Posting the job
++	 * and returning instead of waiting isolates "the job never runs" from
++	 * "the wait never completes"; if the boot moves past this point with the
++	 * flag on, the machine was waiting, not deadlocked.
++	 */
++	if (PE_parse_boot_argn("sweetasyncmatch", &sweetAsyncMatch, sizeof(sweetAsyncMatch))
++	    && sweetAsyncMatch) {
++		sync = false;
++	}
++
+ 	needConfig =  (0 == (__state[1] & (kIOServiceNeedConfigState | kIOServiceConfigRunning)))
+ 	    && (0 == (__state[0] & kIOServiceInactiveState));
+ 
+ 	__state[1] |= kIOServiceNeedConfigState;
