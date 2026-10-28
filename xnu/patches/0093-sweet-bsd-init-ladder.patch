@@ -1,0 +1,24 @@
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -797,9 +797,11 @@ bsd_init(void)
+ 	bsd_init_kprintf("calling sysctl_mib_init\n");
+ 	sysctl_mib_init();
+ 
+ 	bsd_init_kprintf("calling bsd_autoconf\n");
++	kprintf("SWEET BSD: bsd_autoconf ->\n");
+ 	bsd_autoconf();
++	kprintf("SWEET BSD: bsd_autoconf <- returned\n");
+ 
+ #if CONFIG_DTRACE
+ 	dtrace_postinit();
+ #endif
+@@ -878,8 +880,9 @@ bsd_init(void)
+ 		netboot = (mountroot == netboot_mountroot);
+ #endif
+ 
+ 		bsd_init_kprintf("vfs_mountroot\n");
++		kprintf("SWEET BSD: vfs_mountroot ->\n");
+ 		if (0 == (err = vfs_mountroot())) {
+ 			break;
+ 		}
+ 		rootdevice[0] = '\0';
