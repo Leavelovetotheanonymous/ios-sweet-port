@@ -83,9 +83,14 @@ jobs:
         # nothing on the phone changes -- that is exactly how 0086 was lost on
         # run 40499163645 (its context assumed the upstream write order, but
         # 0085 had already swapped the two writes).
+        #
+        # Only our own NNNN-sweet-* files are checked. dxb ships its own patch
+        # set (TrustCache, iobuffermemd_monterey, skywalk_sonoma, ...) and some
+        # of those legitimately report "already exists in working directory" on
+        # this base tree; run 40499163645 built a working kernel that way.
         if: always()
         run: |
-          if grep -E "Skipping patch .*patches/([0-9]{4}-sweet-|TrustCache)" build.log; then
+          if grep -E "Skipping patch .*patches/[0-9]{4}-sweet-" build.log; then
             echo "::error::a SWEET patch was skipped -- the kernel below is stale"
             exit 1
           fi
