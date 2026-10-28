@@ -1,6 +1,24 @@
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
-@@ -186,8 +186,13 @@ AppleCLCD::start(IOService *provider)
+@@ -37,8 +37,17 @@
+ #include "SweetSurface.h"
+ 
+ extern "C" int sweet_console_muted;     /* osfmk/console/serial_console.c */
+ 
++/*
++ * Heartbeat geometry, filled in once by AppleCLCD::start(). Declared up here
++ * because start() itself stores into them, long before the probe block below.
++ */
++uintptr_t sweet_fb_base;
++uint32_t  sweet_fb_rowBytes;
++uint32_t  sweet_fb_width;
++uint32_t  sweet_fb_height;
++
+ #if defined(SWEET)
+ #include <IOKit/IOService.h>
+ #include <IOKit/IOUserClient.h>
+ #include <IOKit/IOKitKeys.h>
+@@ -186,8 +195,13 @@ AppleCLCD::start(IOService *provider)
  		OSSafeReleaseNULL(fSurface);    /* stays published: also held by the table */
  		OSSafeReleaseNULL(fWorkLoop);
  		return false;
@@ -14,18 +32,13 @@
  	if (fVsync == NULL || fWorkLoop->addEventSource(fVsync) != kIOReturnSuccess) {
  		IOLog("SWEET FB: no vsync timer\n");
  		return false;
-@@ -225,24 +230,63 @@ AppleCLCD::start(IOService *provider)
+@@ -225,24 +239,58 @@ AppleCLCD::start(IOService *provider)
   */
  static uint32_t sweet_hb_ticks[2];
  static uint32_t sweet_hb_beacon;        /* milestones lit, 0 = none */
  
-+/* Remembered in start(): the beacon must be able to paint with no vsync at
-+ * all, because the first photo proved the vsync timer may never fire. */
-+static uintptr_t sweet_fb_base;
-+static uint32_t  sweet_fb_rowBytes;
-+static uint32_t  sweet_fb_width;
-+static uint32_t  sweet_fb_height;
-+
++/* The beacon must be able to paint with no vsync at all: the first photo
++ * of this build proved the vsync timer may never fire. */
  #define SWEET_BEACON_CELLS      32
 -#define SWEET_BEACON_CELL       40
 -#define SWEET_BEACON_PITCH      52
@@ -83,7 +96,7 @@
  
  static void
  sweet_fb_paint_beacons(volatile uint32_t *px, uint32_t strideWords, uint32_t w, uint32_t h)
-@@ -254,11 +298,11 @@ sweet_fb_paint_beacons(volatile uint32_t *px, uint32_t strideWords, uint32_t w,
+@@ -254,11 +302,11 @@ sweet_fb_paint_beacons(volatile uint32_t *px, uint32_t strideWords, uint32_t w,
  		uint32_t y = 240 + i * SWEET_BEACON_PITCH;
  		if (y + SWEET_BEACON_CELL > h - 80) {
  			break;
