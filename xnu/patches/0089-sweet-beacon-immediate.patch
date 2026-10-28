@@ -1,0 +1,141 @@
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -186,8 +186,13 @@ AppleCLCD::start(IOService *provider)
+ 		OSSafeReleaseNULL(fSurface);    /* stays published: also held by the table */
+ 		OSSafeReleaseNULL(fWorkLoop);
+ 		return false;
+ 	}
++	sweet_fb_base = fPixels;
++	sweet_fb_rowBytes = fRowBytes;
++	sweet_fb_width = fWidth;
++	sweet_fb_height = fHeight;
++
+ 	fVsync = IOTimerEventSource::timerEventSource(this, &AppleCLCD::vsyncFired);
+ 	if (fVsync == NULL || fWorkLoop->addEventSource(fVsync) != kIOReturnSuccess) {
+ 		IOLog("SWEET FB: no vsync timer\n");
+ 		return false;
+@@ -225,24 +230,63 @@ AppleCLCD::start(IOService *provider)
+  */
+ static uint32_t sweet_hb_ticks[2];
+ static uint32_t sweet_hb_beacon;        /* milestones lit, 0 = none */
+ 
++/* Remembered in start(): the beacon must be able to paint with no vsync at
++ * all, because the first photo proved the vsync timer may never fire. */
++static uintptr_t sweet_fb_base;
++static uint32_t  sweet_fb_rowBytes;
++static uint32_t  sweet_fb_width;
++static uint32_t  sweet_fb_height;
++
+ #define SWEET_BEACON_CELLS      32
+-#define SWEET_BEACON_CELL       40
+-#define SWEET_BEACON_PITCH      52
++#define SWEET_BEACON_CELL       32
++#define SWEET_BEACON_PITCH      44
++
++extern "C" void sweet_beacon_repaint(void);
+ 
+ /*
+  * Milestone beacon: drivers call this with a step number as they get through
+- * their start(), and the vsync timer repaints the lit cells every frame. Text
+- * is drawn by the console and would rub the cells out, so they have to be
+- * repainted; that also means the column only moves while the work loop runs.
++ * their start(), and the cell is painted right there and then. It used to be
++ * painted only from the vsync timer, which made the whole probe silent when
++ * the timer never ran -- exactly what the 13:06 photo showed.
+  */
++extern "C" void
++sweet_beacon(uint32_t step);
++
+ extern "C" void
+ sweet_beacon(uint32_t step)
+ {
+ 	if (step < SWEET_BEACON_CELLS && (step + 1) > sweet_hb_beacon) {
+ 		sweet_hb_beacon = step + 1;
+ 	}
++	sweet_beacon_repaint();
++}
++
++/* 0 means AppleCLCD::vsyncFired never ran a single time. */
++extern "C" uint32_t
++sweet_fb_vsync_ticks(void)
++{
++	return sweet_hb_ticks[0];
++}
++
++extern "C" uint32_t
++sweet_beacon_count(void)
++{
++	return sweet_hb_beacon;
++}
++
++static void
++sweet_fb_paint_beacons(volatile uint32_t *px, uint32_t strideWords, uint32_t w, uint32_t h);
++
++extern "C" void
++sweet_beacon_repaint(void)
++{
++	if (sweet_fb_base == 0) {
++		return;
++	}
++	sweet_fb_paint_beacons((volatile uint32_t *)sweet_fb_base,
++	    sweet_fb_rowBytes / 4, sweet_fb_width, sweet_fb_height);
+ }
+ 
+ static void
+ sweet_fb_paint_beacons(volatile uint32_t *px, uint32_t strideWords, uint32_t w, uint32_t h)
+@@ -254,11 +298,11 @@ sweet_fb_paint_beacons(volatile uint32_t *px, uint32_t strideWords, uint32_t w,
+ 		uint32_t y = 240 + i * SWEET_BEACON_PITCH;
+ 		if (y + SWEET_BEACON_CELL > h - 80) {
+ 			break;
+ 		}
+-		for (uint32_t yy = y; yy < y + SWEET_BEACON_CELL; yy += 2) {
++		for (uint32_t yy = y; yy < y + SWEET_BEACON_CELL; yy++) {
+ 			volatile uint32_t *line = px + (uint64_t)yy * strideWords;
+-			for (uint32_t xx = x; xx < x + SWEET_BEACON_CELL; xx += 2) {
++			for (uint32_t xx = x; xx < x + SWEET_BEACON_CELL; xx++) {
+ 				line[xx] = 0xffffffffu;
+ 			}
+ 		}
+ 	}
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -38,8 +38,10 @@ extern "C" uint64_t mach_absolute_time(void);
+  * which is exactly what the boot hangs look like: the last IOLog of a start
+  * routine never appears even though the routine itself must have finished.
+  */
+ extern "C" void sweet_beacon(uint32_t step);
++extern "C" uint32_t sweet_fb_vsync_ticks(void);
++extern "C" uint32_t sweet_beacon_count(void);
+ 
+ /* One open client: the user client and its event callback. */
+ class IOHIDEventServiceClient : public OSObject {
+ 	OSDeclareDefaultStructors(IOHIDEventServiceClient);
+@@ -413,12 +415,15 @@ SweetHIDButtons::start(IOService *provider)
+ 			fTest->setTimeoutMS(fTestSecs * 1000);
+ 		}
+ 	}
+ 	sweet_beacon(2);
++	IOLog("SWEET HID: buttons pre-register (vsync=%u beacon=%u)\n",
++	    sweet_fb_vsync_ticks(), sweet_beacon_count());
+ 	gSweetButtons = this;
+ 	registerService();
+ 	sweet_beacon(3);
+-	IOLog("SWEET HID: buttons registered (test every %u s)\n", fTestSecs);
++	IOLog("SWEET HID: buttons registered (test every %u s, vsync=%u)\n",
++	    fTestSecs, sweet_fb_vsync_ticks());
+ 	return true;
+ }
+ 
+ void
+@@ -476,9 +481,10 @@ SweetHIDTouch::start(IOService *provider)
+ 	setProperty("SurfaceHeight", (unsigned long long)(151 << 16), 32);
+ 	gSweetTouch = this;
+ 	registerService();
+ 	sweet_beacon(6);
+-	IOLog("SWEET HID: touch registered\n");
++	IOLog("SWEET HID: touch registered (vsync=%u beacon=%u)\n",
++	    sweet_fb_vsync_ticks(), sweet_beacon_count());
+ 	return true;
+ }
+ 
+ void
