@@ -1,0 +1,52 @@
+--- a/iokit/Kernel/IOService.cpp
++++ b/iokit/Kernel/IOService.cpp
+@@ -5768,8 +5768,10 @@ _IOConfigThread::main(void * arg, wait_result_t result)
+ 	if (KERN_SUCCESS != kr) {
+ 		IOLog("thread_policy_set(%d)\n", kr);
+ 	}
+ 
++	kprintf("SWEET CFG: worker entered\n");
++
+ 	do {
+ //	randomDelay();
+ 
+ 		semaphore_wait( gJobsSemaphore );
+@@ -5792,8 +5794,11 @@ _IOConfigThread::main(void * arg, wait_result_t result)
+ 				LOG("config(%p): starting on %s, %d\n",
+ 				    IOSERVICE_OBFUSCATE(IOThreadSelf()), job->nub->getName(), job->type);
+ 			}
+ 
++			kprintf("SWEET CFG: worker got job type=%d nub=%s\n",
++			    (int) job->type, nub ? nub->getName() : "?");
++
+ 			switch (job->type) {
+ 			case kMatchNubJob:
+ 				nub->doServiceMatch( job->options );
+ 				break;
+@@ -5803,8 +5808,11 @@ _IOConfigThread::main(void * arg, wait_result_t result)
+ 				    IOSERVICE_OBFUSCATE(IOThreadSelf()), job->type );
+ 				break;
+ 			}
+ 
++			kprintf("SWEET CFG: worker done nub=%s\n",
++			    nub ? nub->getName() : "?");
++
+ 			if (job->options & kIOServiceDextRequirePowerForMatching) {
+ 				gIOPMRootDomain->releaseDriverKitMatchingAssertion();
+ 			}
+ 
+@@ -5916,9 +5924,14 @@ _IOServiceJob::pingConfig( _IOServiceJob * job )
+ 	if (create) {
+ 		if (gIOKitDebug & kIOLogConfig) {
+ 			LOG("config(%d): creating\n", gNumConfigThreads - 1);
+ 		}
++		kprintf("SWEET CFG: creating #%d out=%d wait=%d jobs=%d nub=%s\n",
++		    gNumConfigThreads, gOutstandingJobs, gNumWaitingThreads,
++		    (int) gJobs->getCount(), nub ? nub->getName() : "?");
+ 		_IOConfigThread::configThread(nub->getName());
++		kprintf("SWEET CFG: thread for %s started\n",
++		    nub ? nub->getName() : "?");
+ 	}
+ 
+ 	semaphore_signal( gJobsSemaphore );
+ }
