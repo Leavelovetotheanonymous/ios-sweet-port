@@ -1,0 +1,33 @@
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -241,11 +241,14 @@ static uint32_t sweet_hb_ticks[2];
+ static uint32_t sweet_hb_beacon;        /* milestones lit, 0 = none */
+ 
+ /* The beacon must be able to paint with no vsync at all: the first photo
+  * of this build proved the vsync timer may never fire. */
++/* 3200 px panel: a 32 px strip is one pixel in a phone photo. */
++#define SWEET_HB_STRIP          120
++
+ #define SWEET_BEACON_CELLS      32
+-#define SWEET_BEACON_CELL       32
+-#define SWEET_BEACON_PITCH      44
++#define SWEET_BEACON_CELL       52
++#define SWEET_BEACON_PITCH      68
+ 
+ extern "C" void sweet_beacon_repaint(void);
+ 
+ /*
+@@ -321,11 +324,11 @@ sweet_fb_heartbeat(uintptr_t pixels, uint32_t rowBytes, uint32_t w, uint32_t h,
+ 	uint32_t n = ++sweet_hb_ticks[which];
+ 	uint32_t span = w - 32;
+ 	uint32_t off = (which == 0) ? (n * 8) % span : (n * 32) % span;
+ 	uint32_t color = (which == 0) ? 0xffff0000u : 0xff00ff00u;
+-	uint32_t y0 = (which == 0) ? 0u : (h - 32);
++	uint32_t y0 = (which == 0) ? 0u : (h - SWEET_HB_STRIP);
+ 
+-	for (uint32_t y = y0; y < y0 + 32; y += 2) {
++	for (uint32_t y = y0; y < y0 + SWEET_HB_STRIP; y += 2) {
+ 		volatile uint32_t *line = (volatile uint32_t *)(pixels + (uint64_t)y * rowBytes);
+ 		for (uint32_t x = 0; x < w; x += 2) {
+ 			line[x] = (x >= off && x < off + 32) ? color : 0xff000000u;
+ 		}
