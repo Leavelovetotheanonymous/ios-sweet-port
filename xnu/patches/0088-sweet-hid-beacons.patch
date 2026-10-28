@@ -1,6 +1,8 @@
 --- a/iokit/Kernel/arm/hid/SweetHID.cpp
 +++ b/iokit/Kernel/arm/hid/SweetHID.cpp
-@@ -31,6 +31,15 @@
+@@ -29,10 +29,19 @@
+ #include "IOHIDPrivateKeys.h"
+ #include "IOHIDUsageTables.h"
  
  extern "C" uint64_t mach_absolute_time(void);
  
@@ -16,7 +18,11 @@
  /* One open client: the user client and its event callback. */
  class IOHIDEventServiceClient : public OSObject {
  	OSDeclareDefaultStructors(IOHIDEventServiceClient);
-@@ -371,17 +380,33 @@
+ public:
+ 	bool                       initClient() { return OSObject::init(); }
+@@ -379,21 +388,37 @@ static SweetHIDButtons *gSweetButtons;
+ static SweetHIDTouch *gSweetTouch;
+ 
  bool
  SweetHIDButtons::start(IOService *provider)
  {
@@ -50,7 +56,11 @@
  	IOLog("SWEET HID: buttons registered (test every %u s)\n", fTestSecs);
  	return true;
  }
-@@ -418,16 +443,24 @@
+ 
+ void
+@@ -426,14 +451,21 @@ SweetHIDButtons::testFired(OSObject *owner, IOTimerEventSource *sender)
+ }
+ 
  bool
  SweetHIDTouch::start(IOService *provider)
  {
@@ -65,7 +75,12 @@
  		return false;
  	}
 +	sweet_beacon(5);
- 	/* The digitizer covers the main display (backboardd maps it 1:1). */
+ 	int native = 0;
+ 	PE_parse_boot_argn("sweetfb_native", &native, sizeof(native));
+ 	fLogicalW = native ? 1080 : 1125;
+ 	fLogicalH = native ? 2400 : 2436;
+ 	fOffX = (fLogicalW - 1080) / 2;
+@@ -442,10 +474,11 @@ SweetHIDTouch::start(IOService *provider)
  	setProperty("DisplayIntegrated", kOSBooleanTrue);
  	setProperty("SurfaceWidth", (unsigned long long)(68 << 16), 32);	/* mm, 16.16 */
  	setProperty("SurfaceHeight", (unsigned long long)(151 << 16), 32);
@@ -75,3 +90,5 @@
  	IOLog("SWEET HID: touch registered\n");
  	return true;
  }
+ 
+ void
